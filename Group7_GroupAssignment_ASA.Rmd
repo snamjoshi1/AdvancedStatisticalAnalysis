@@ -1,0 +1,389 @@
+---
+title: "ASA_Group_Assignment"
+author: "Shephali Bharadwaj,Shreyas Namjoshi,Ronil Bhan"
+date: "03/04/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+setwd("E:\\ISB\\Term4\\ASA\\Assignment")
+library("MASS")
+library("ISLR")
+library("readxl")
+library("klaR")
+library(caret)
+library("PerformanceAnalytics")
+library(lares)
+```
+
+<span style="color: blue;">Q1. Build a prediction model for predicting churn, using both 
+discriminant analysis and logistic regression. You may consider using the 
+appropriate explanatory variables. If necessary, create additional variables 
+using the existing variables.</span>
+
+
+
+```{r}
+#Loading the data and dividing it in Train and Test
+data<-read.csv("file7.csv")
+
+#Removing Index and Customer ID
+finalData<-data[-c(0:2)]
+
+#Removing 5 rows that contains null values for TotalCharges 
+finalData2<-  finalData[!(is.na(finalData$TotalCharges) | finalData$TotalCharges==""), ]
+
+#Apply Churn = No as 0 and Churn = Yes as 1
+require(dplyr)
+finalData2 <- finalData2 %>%
+      mutate(Churn = ifelse(Churn == "No",0,1))
+
+#Applying one hot encoding on categorical variables
+dmy <- dummyVars(" ~ .", data = finalData2, fullRank = T)
+dat_transformed <- data.frame(predict(dmy, newdata = finalData2))
+
+#Find top 10 variables with high correlation coefficient
+
+corr_cross(dat_transformed, # name of dataset
+  max_pvalue = 0.05, # display only significant correlations (at 5% level)
+  top = 10 # display top 10 couples of variables (by correlation coefficient)
+)
+
+
+```
+
+
+```{r}
+#Remove columns with high correlation coefficient to reduce multicollinearity effect
+df2 = cor(dat_transformed)
+hc = findCorrelation(df2, cutoff=0.95) # putt any value as a "cutoff" 
+hc = sort(hc)
+reduced_Data = dat_transformed[,-c(hc)]
+
+```
+
+
+
+
+```{r}
+#Divide data to train and test
+## 70% of the data for training
+train_size <- floor(0.70 * nrow(reduced_Data))
+
+## set the seed to make your partition reproducible
+set.seed(213)
+train_ind <- sample(seq_len(nrow(reduced_Data)), 
+                  size = train_size)
+train <- reduced_Data[train_ind,]
+
+test <- reduced_Data[-train_ind,]
+```
+
+```{r}
+#Find number for Chrun = 0 and churn = 1
+table(train$Churn)
+
+```
+    
+    We see that we have 2553 customer with Chrun = No and 943 customer with Churn = Yes
+
+```{r}
+#Applying Logistic Regression Model
+Default.Model <- glm(train$Churn ~ ., data=train, family = binomial)
+summary(Default.Model)
+```
+```{r}
+#Applying LDA
+lda.fit<-lda(train$Churn~.,data=train)
+lda.fit
+
+plot(lda.fit, type='b')
+```
+
+```{r}
+#Predict using LDA model and get overall model accuracy on test set
+lda.pred <- predict(lda.fit, test)
+lda_results <- confusionMatrix(data=lda.pred$class, reference=as.factor(test$Churn))
+print(lda_results)
+```
+
+```{r}
+#Predict using Logistic model and get overall model accuracy on test set
+predicted<-as.data.frame(predict(Default.Model,test[,-24],type = "response"))
+predicted<-as.numeric(predicted>0.5)
+resultsLG<-confusionMatrix(data = as.factor(predicted), reference = as.factor(test$Churn))
+print(resultsLG)
+
+
+```
+
+
+<span style="color: blue;">Q2. Comment on the predictive accuracy and the impact of each of the 
+explanatory variables on churn.</span>
+
+```{r}
+
+#Applying Greedy Wilks with alpha=0.05
+dependent1=train$Churn
+formulaAll= dependent1 ~ train$genderMale+train$SeniorCitizen+train$PartnerYes+train$DependentsYes+train$tenure+train$PhoneServiceYes+train$MultipleLinesYes+train$InternetServiceFiber.optic+train$OnlineSecurityYes+train$OnlineBackupYes+train$DeviceProtectionYes+train$TechSupportYes+train$StreamingTVYes+train$StreamingMoviesNo.internet.service+train$StreamingMoviesYes+train$ContractOne.year+train$ContractTwo.year+train$PaperlessBillingYes+train$PaymentMethodCredit.card..automatic.+train$PaymentMethodElectronic.check+train$PaymentMethodMailed.check+train$MonthlyCharges+train$TotalCharges
+print(formulaAll)
+greedy.wilks(formulaAll,data=train,niveau = 0.05) 
+#print(lda_results)
+
+```
+
+    
+      After applying greedy wilks, we get above variables(#15) as significant( with alpha =0.05) which directly impact the churn.
+      
+```{r}
+#LDA accuracy on test data set
+print(lda_results)
+```
+
+
+      We observe that the overall accuracy on test data is 81.59% with specificity of 89.82% and sensitivity of 58.10%
+      
+      
+```{r}
+#Logistic Model
+summary(Default.Model)
+```
+
+      From the above table(output of summary of logistic regression model), we observe that the following variable are significant in predicting the Churn Class.
+       Tenure, MultipleLinesYes,InternetServiceFiber.optic,StreamingTVYes,StreamingMoviesNo.internet.service,StreamingMoviesYes,ContractOne.year,ContractTwo.year,Pap,erlessBillingYes,PaymentMethodElectronic.check ,TotalCharges
+       
+```{r}
+#Logistic Accuracy on Test Data
+resultsLG
+```
+
+      We observe that the overall accuracy on test data is 82.45% with specificity of 91.08% and sensitivity of 57.84%
+
+      Comparing accuracies of both the models we can say that Logistic Regression seems to predict churn better.
+
+<span style="color: blue;">Q3.Divide all the customers into 3 categories namely Low, Medium 
+and High using the variable “TotalCharges”. Let us call them “Customer 
+Value Segments”. Build prediction models to predict the category/ Value 
+Segment. Comment on the profile of the customers in each category/ Value 
+Segment. Identify appropriate strategies to shift customers from each value 
+segment to the next higher segment.</span>
+```{r}
+library(dplyr)
+#Here we will use complete data set that we get after applying the techniques and removing collinear variables
+
+#perform data binning on points variable
+#Assumption: 1- Low , 2- Medium, 3- High
+dfQ3<-reduced_Data %>% mutate(Customer_Value_Segments = ntile(reduced_Data$TotalCharges, n=3))
+
+#Removing total charges variable from the data set
+dfQ3<-dfQ3[,-23]
+
+
+```
+```{r}
+# Divide the data in train and test
+trainQ3 <- dfQ3[train_ind,]
+
+testQ3 <- dfQ3[-train_ind,]
+```
+
+
+```{r}
+#Since the problem is a multiclass classification problem, we will use LDA here.
+#Applying LDA
+lda.fit.Q3<-lda(trainQ3$Customer_Value_Segments~.,data=trainQ3)
+lda.fit.Q3
+
+```
+```{r}
+#LDA accuracy on test data
+lda.pred.Q3 <- predict(lda.fit.Q3, test)
+results <- confusionMatrix(data=lda.pred.Q3$class, reference=as.factor(testQ3$Customer_Value_Segments))
+print(results)
+```
+
+      Model accuracy on test data is 91.93%.
+
+```{r}
+class_low<-dfQ3[dfQ3$Customer_Value_Segments == 1, ]
+class_medium<-dfQ3[dfQ3$Customer_Value_Segments == 2, ]
+class_high<-dfQ3[dfQ3$Customer_Value_Segments == 3, ]
+```
+
+
+```{r}
+dfQ3 %>%
+  group_by(Customer_Value_Segments) %>%
+  summarise(n = n())
+```
+
+
+```{r message=FALSE, warning=FALSE}
+dfQ3 %>%
+  group_by(Customer_Value_Segments,finalData2$MultipleLines) %>%
+  summarise(n = n())
+```
+
+
+```{r}
+dfQ3 %>%
+  group_by(Customer_Value_Segments,InternetServiceFiber.optic) %>%
+  summarise(mean = mean(genderMale), n = n())
+```
+
+```{r}
+dfQ3 %>%
+  group_by(Customer_Value_Segments,PartnerYes) %>%
+  summarise(mean = mean(PartnerYes), n = n())
+```
+
+
+```{r}
+dfQ3 %>%
+  group_by(Customer_Value_Segments,finalData2$PaymentMethod) %>%
+  summarise(n = n())
+```
+
+
+```{r}
+dfQ3 %>%
+  group_by(Customer_Value_Segments,finalData2$Contract) %>%
+  summarise(n = n())
+```
+
+Customer profiling depending on customer value segments
+
+- Low value segment customers usually have month-to-month contract with fewer number of multiple lines and fewer customers opt for internet and it's related services for example DeviceProtection, StreamingMovies etc). They typically use 'Mailed Check' and 'Electronic check' as their preferred payment option. 
+
+- Medium value segment customers usually have higher month-to month with respect to one-year/two year contract and comparable one-year/two-year contracts. Customers in this segment have higher MultipleLines compared and higher number of customers prefer internet and it's related services as compared to low value segment customers.Here people prefer credit cards payment as compared to low segment.
+
+- Higher Value segment customers usually opt for one/two year contracts, they opt for online transfers rather than mailed checks as their payment preference. More people have multiple Lines and opt for internet and it's related services. More customers in this segment have the Partner as 'yes' in comparison to other segments.
+
+Strategies based on above customer profiles follows-
+
+- We should give more offers on internet/fiber optic services so that customers in lower and medium value segment gets lured to opt for such services. The more the services customers opt the more it reflects on TotalCharges that results in customers moving to higher segment. Opting for internet fiber optic services also means customers has an additional option to opt for MultipleLines, we can create a combo offers that provides discount on MultipleLines.
+
+- We should make customers from lower/medium segment aware about benefits of opting for online transfers and provide discounts on using credit card/internet banking and electronic checks. 
+
+- Provide more combo offers/family packs so that customers would move from lower to higher value segment.
+
+- We should provide more offers on higher tenure (one-year/tw0-year) Contracts so that customers move from month-to-month to either one-year or two-year contract and hence bringing more business.
+
+<span style="color: blue;">Q4. Create an overall survival curve using the Tenure variable. Use 
+Kaplan-Meier method.</span>
+
+```{r}
+library("survival")
+library("survminer")
+
+```
+
+```{r}
+#Here we take complete data set(contains multicollinear variables also)
+fit <- survfit(Surv(finalData2$tenure,finalData2$Churn)~1 , data = finalData2)
+summary(fit)
+```
+```{r message=FALSE,warning=FALSE} 
+ggsurvplot(fit,
+          pval = TRUE, conf.int = TRUE,
+          risk.table = TRUE, 
+          risk.table.col = "strata", 
+          linetype = "strata", 
+          surv.median.line = "hv", 
+          ggtheme = theme_bw(),
+          censor=FALSE
+        
+)
+          
+```
+
+
+<span style="color: blue;">Q5.Create separate survival curves for different categories of customers 
+(for example, Gender). Comment on the differences in these survival curves.</span>
+```{r}
+fit_gender <- survfit(Surv(finalData2$tenure,finalData2$Churn)~finalData2$gender , data = finalData2)
+ggsurvplot(fit_gender,
+          pval = TRUE, conf.int = TRUE,
+          risk.table = TRUE, 
+          risk.table.col = "strata", 
+          linetype = "strata", 
+          surv.median.line = "hv", 
+          ggtheme = theme_bw(),
+          censor=FALSE
+        
+)
+
+
+
+```
+```{r}
+
+fit_seniorCitizen <- survfit(Surv(finalData2$tenure,finalData2$Churn)~finalData2$SeniorCitizen , data = finalData2)
+ggsurvplot(fit_seniorCitizen,
+          pval = TRUE, conf.int = TRUE,
+          risk.table = TRUE, 
+          risk.table.col = "strata", 
+          linetype = "strata", 
+          surv.median.line = "hv", 
+          ggtheme = theme_bw(),
+          censor=FALSE
+        
+)
+```
+
+
+```{r}
+
+fit_internetService <- survfit(Surv(finalData2$tenure,finalData2$Churn)~finalData2$InternetService , data = finalData2)
+ggsurvplot(fit_internetService,
+          pval = TRUE, conf.int = TRUE,
+          risk.table = TRUE, 
+          risk.table.col = "strata", 
+          linetype = "strata", 
+          surv.median.line = "hv", 
+          ggtheme = theme_bw(),
+          censor=FALSE
+        
+)
+```
+
+```{r}
+fit_phoneService <- survfit(Surv(finalData2$tenure,finalData2$Churn)~finalData2$PhoneService , data = finalData2)
+ggsurvplot(fit_phoneService,
+          pval = TRUE, conf.int = TRUE,
+          risk.table = TRUE, 
+          risk.table.col = "strata", 
+          linetype = "strata", 
+          surv.median.line = "hv", 
+          ggtheme = theme_bw(),
+          censor=FALSE
+        
+)
+```
+
+      
+      While plotting survival curves for gender,seniorCitizen,internet service and phone service, we observe significant difference in senior citizen and internet service with p-values as 0.0001 for both the variables.
+      
+      For InternetService attribute,We see that survival probability for all the 3 categories(DSL,Fiber Optic, NO) is significantly different.
+      Incase of Gender, we dont see significant difference between survival probablity between males and females.
+
+
+<span style="color: blue;">Q6.Build Cox’s Hazard model using appropriate explanatory 
+variables. Comment on the coefficients of the model</span>
+```{r}
+Telco.cox <- coxph(Surv(tenure, Churn) ~ reduced_Data$genderMale +reduced_Data$SeniorCitizen+reduced_Data$PartnerYes +reduced_Data$DependentsYes
++reduced_Data$PhoneServiceYes +reduced_Data$MultipleLinesYes +reduced_Data$InternetServiceFiber.optic +reduced_Data$OnlineSecurityYes
++reduced_Data$OnlineBackupYes +reduced_Data$DeviceProtectionYes +reduced_Data$TechSupportYes +reduced_Data$StreamingTVYes
++reduced_Data$StreamingMoviesNo.internet.service+reduced_Data$StreamingMoviesYes +reduced_Data$ContractOne.year+reduced_Data$ContractTwo.year +reduced_Data$PaperlessBillingYes +reduced_Data$PaymentMethodCredit.card..automatic.+reduced_Data$PaymentMethodElectronic.check+reduced_Data$PaymentMethodMailed.check
++reduced_Data$MonthlyCharges +reduced_Data$TotalCharges ,data = reduced_Data)
+summary(Telco.cox)
+```
+
+      
+      Assumption: We have commented on some of the statistically significant attributes below. FOr rest of the attributes similar explanation holds true.
+      1. Since coefficient of PartnerYes is -1.766e-01  and its significant, we can say that, attribute PartnerYes has lower risk with respect to PartnerNo. PartnerYes reduces the hazard by a factor of 0.83812 
+      2.Since coefficient of InternetServiceFiber.optic is  1.452e+00  and its significant, we can say that, attribute InternetServiceFiber.optic has higher risk with respect to InternetServiceFiber.DSL.InternetServiceFiber.optic increases the hazard by a factor of 4.27008 
+      3.Since coefficient of StreamingMoviesNo.internet.service is  -2.606e+00  and its significant, we can say that, attribute StreamingMoviesNo.internet.service has lower risk with respect to StreamingMovies.No .StreamingMoviesNo.internet.service decreases the hazard by a factor of 0.07382 
+      4.Since coefficient of ContractOne.year is  -1.331e+00  and its significant, we can say that, attribute ContractOne.year has lower risk with respect to Contract.Month.to.Month .ContractOne.year decreases the hazard by a factor of 0.26418 
+      5.Since coefficient of ContractTwo.year is  -3.750e+00  and its significant, we can say that, attribute ContractTwo.year has lower risk with respect to Contract.Month.to.Month .ContractTwo.year decreases the hazard by a factor of 0.02352 

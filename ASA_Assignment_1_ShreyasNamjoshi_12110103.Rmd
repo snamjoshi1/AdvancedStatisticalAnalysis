@@ -1,0 +1,98 @@
+---
+title: "ASA_Assignment_1"
+author: "Shreyas Namjoshi"
+date: "23/03/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+setwd("E:\\ISB\\Term4\\ASA\\Assignment")
+library("MASS")
+library("ISLR")
+library("readxl")
+library("klaR")
+library(caret)
+
+```
+
+## R Markdown
+
+    Loading the data and dividing it in Train and Test
+
+```{r}
+data<-read_excel("FinalDataSet_ASA.xlsx")
+## 70% of the data for training
+train_size <- floor(0.70 * nrow(data))
+
+## set the seed to make your partition reproducible
+set.seed(213)
+train_ind <- sample(seq_len(nrow(data)), 
+                    size = train_size)
+train <- data[train_ind,]
+test <- data[-train_ind,]
+```
+  
+<span style="color: blue;">Q1.  Build a Discriminant Analysis Model to predict whether the person is likely to 
+accept the bank’s offer for a personal loan. If necessary, create new variables to 
+improve the model performance.</span>
+
+```{r}
+lda.fit<-lda(data$`Personal Loan`~.,data=data,subset = train_ind)
+lda.fit
+
+plot(lda.fit, type='b')
+
+
+```
+    
+      Here from the plot we can see that there is clear difference between 2 classes (availed and not availed) with very less overlap or misclassification between the two classes.
+      
+      
+      
+<span style="color: blue;">Q2.  Carry out significance tests using Wilk’s Lambda.</span>
+      
+
+      Assuming alpha=0.1
+      
+```{r}
+dependent1=train$`Personal Loan`
+formulaAll= dependent1 ~ train$Age+train$Experience+train$Income+train$`ZIP Code`+train$Family+train$CCAvg+train$Education+train$Mortgage+train$`Securities Account`+train$`CD Account`+train$Online+train$CreditCard
+print(formulaAll)
+greedy.wilks(formulaAll,data=train,niveau = 0.1) 
+
+```
+     
+<span style="color: blue;">Q3.  Comment on the variables that are significant</span>
+     
+     Comment:From the above table, the variables that are significant with cut off= 0.1 are Income,CD Account,Education,Family,CCAvg and Credit Card.SO even if we drop rest of the variables from our model, our prediction is not going to change much.
+
+     
+<span style="color: blue;">4.  Create the confusion matrix and comment on the prediction accuracy.</span>
+     
+     Here we get the prediction accuracy for test set(300 Records)
+```{r}
+lda.pred <- predict(lda.fit, test)
+results <- confusionMatrix(data=lda.pred$class, reference=as.factor(test$`Personal Loan`))
+print(results)
+```
+      
+      From the above output, it is seen that Prediction Accuracy is 92% with sensitivity as 98% and specificity as 44%.
+      
+<span style="color: blue;">5. The bank would like to address the top 30 persons with an offer for personal loan 
+based on the probability (propensity). Create a table displaying all the details of the 
+“top” 30 persons who are most likely to accept the bank’s offer. Make sure to 
+include the probability of accepting the offer along with all the other details.</span>
+      
+      
+      Here we are including only test set to find the top 30 person who are most likely to accept bank offer based on probability
+```{r}
+probdf<-lda.pred$posterior
+test['Prob of Availing']<-probdf[,"1"]
+test<-test[order(test$`Prob of Availing`,decreasing = TRUE),]
+head(test,n=30)
+```
+      
+
+
+     
+     

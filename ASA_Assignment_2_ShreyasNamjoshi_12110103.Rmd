@@ -1,0 +1,149 @@
+---
+title: "ASA_Assignment_2"
+author: "Shreyas Namjoshi"
+date: "23/03/2022"
+output: html_document
+---
+```{r setup, include=FALSE}
+setwd("E:\\ISB\\Term4\\ASA\\Assignment")
+library("MASS")
+library("ISLR")
+library("readxl")
+library("klaR")
+library(caret)
+
+```
+
+## R Markdown
+
+    Loading the data and dividing it in Train and Test
+
+```{r}
+data<-read_excel("FinalDataSet_ASA.xlsx")
+## 70% of the data for training
+train_size <- floor(0.70 * nrow(data))
+
+## set the seed to make your partition reproducible
+set.seed(213)
+train_ind <- sample(seq_len(nrow(data)), 
+                    size = train_size)
+train <- data[train_ind,]
+test <- data[-train_ind,]
+```
+
+
+<span style="color: blue;">Q1. Build a logistic regression equation to predict whether the person is likely to accept 
+the bank’s offer for a personal loan. If necessary, create new variables to improve 
+the model performance.</span>
+```{r}
+Default.Model <- glm(train$`Personal Loan` ~ ., data=train, family = binomial)
+summary(Default.Model)
+```
+      
+<span style="color: blue;">Q2. Carry out the omnibus test to test whether the model as a whole is significant. 
+Comment on the result of the omnibus test.</span>
+
+```{r}
+library(lmtest)
+lrtest(Default.Model)
+```
+
+      Here We reject the Model 2 as we have sufficient evidence that model 2(model with only intercept) is not good (assumed value of alpha is 0.05).This means that atleast one of the coeff is significant.
+      
+      
+<span style="color: blue;">Q3.Test the hypothesis that βj = 0 for all βj, where βj indicates the coefficient 
+corresponding to jth explanatory variable. Comment on the result of these
+hypothesis tests.</span>
+```{r}
+summary(Default.Model)
+```
+      
+      Comment: In the above table, P value represents the Walds Test P Value. Thus only significant variables contributing to the model are Income,Family,CCAvg,Education,CD Account, Credit Card. Rest of the coefficients are non significant.
+      
+<span style="color: blue;">Q4.Carry out the hypothesis test that the model fits the data. Comment on the results.</span>
+```{r}
+library(ResourceSelection)
+hoslem.test(Default.Model$y, fitted(Default.Model))
+
+```
+
+      From the above P value, we do not have sufficient evidence to reject Null hypothesis. This implies that model fits the data well.
+      
+      
+<span style="color: blue;">Q5.The bank would like to address the top 30 persons with an offer for personal loan 
+based on the probability (propensity). Create a table displaying all the details of the
+“top” 30 persons who are most likely to accept the bank’s offer. Make sure to 
+include the probability of accepting the offer along with all the other details.</span>
+      
+      
+       Here we are including only test set to find the top 30 person who are most likely to accept bank offer based on probability
+       
+```{r}
+pred<-as.data.frame(predict(Default.Model,test[,-9],type = "response"))
+pred
+
+test['Prob of Availing']<-pred
+test1<-test[order(test$`Prob of Availing`,decreasing = TRUE),]
+testLG<-head(test1,n=30)
+testLG
+
+```
+      
+<span style="color: blue;">Q6. Compare the above list of 30 persons against the 30 persons obtained from 
+Discriminant Analysis (Assignment 1). Comment on the similarities and 
+dissimilarities</span>
+
+      
+```{r}
+
+lda.fit<-lda(data$`Personal Loan`~.,data=data,subset = train_ind)
+#lda.fit
+lda.pred <- predict(lda.fit, test)
+probdf<-lda.pred$posterior
+test['Prob of Availing LDA']<-probdf[,"1"]
+test['class']<-lda.pred$class
+testLDA<-test[order(test$`Prob of Availing LDA`,decreasing = TRUE),]
+testLDA30<-head(testLDA,n=30)
+summary(testLDA30)
+
+```
+
+
+```{r}
+summary(testLG)
+```
+```{r}
+print("Education Count")
+
+table(testLG$Education)
+table(testLDA30$Education)
+
+print("CD Count")
+
+table(testLG$`CD Account`)
+table(testLDA30$`CD Account`)
+
+print("Credit Card Count")
+
+table(testLG$CreditCard)
+table(testLDA30$CreditCard)
+
+print("CM for LDA for test set")
+resultsLDA <- confusionMatrix(data=testLDA30$class, reference=as.factor(testLDA30$`Personal Loan`))
+print(resultsLDA)
+
+print("CM for LR for test set")
+predicted<-as.numeric(testLG$`Prob of Availing`>0.5)
+resultsLG<-confusionMatrix(data = as.factor(predicted), reference = as.factor(testLG$`Personal Loan`))
+print(resultsLG)
+
+
+```
+
+        1. we see similarities in both the output's with respect to age,income,family, and CCAvg,securities Account
+        2. We can see that there are more people with education as UG and Graduate in LDA than in Logistic.
+        3. We see that in LDA, more number of people are there who have Certificate of Deposit
+        4. We also see that number of people who use credit are more in LDA than in Logistic Regression
+        5. We also see improved level of accuracy,specificity and sensitivity for Logistic Regression as compared to LDA for test data.
+        
+      
